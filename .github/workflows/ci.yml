@@ -20,7 +20,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Load pinned versions
-        run: grep -E '^[A-Z0-9_]+=' versions.env >> "$GITHUB_ENV"
+        run: grep -E '^[A-Z0-9_]+=' versions.env | sed 's/[[:space:]]#.*$//' >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           version: ${{ env.UV_VERSION }}
@@ -63,7 +63,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Load pinned versions
-        run: grep -E '^[A-Z0-9_]+=' versions.env >> "$GITHUB_ENV"
+        run: grep -E '^[A-Z0-9_]+=' versions.env | sed 's/[[:space:]]#.*$//' >> "$GITHUB_ENV"
       - id: meta
         name: Artifact names
         run: |
@@ -123,13 +123,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Load pinned versions
-        run: grep -E '^[A-Z0-9_]+=' versions.env >> "$GITHUB_ENV"
-      - uses: medyagh/setup-minikube@v0.0.21
-        with:
-          minikube-version: ${{ env.MINIKUBE_VERSION }}
-          kubernetes-version: ${{ env.KUBERNETES_VERSION }}
-          driver: docker
-          start: "false"
+        run: grep -E '^[A-Z0-9_]+=' versions.env | sed 's/[[:space:]]#.*$//' >> "$GITHUB_ENV"
+      - name: Install checksum-verified Minikube
+        run: |
+          curl --fail --location --silent --show-error \
+            --output /tmp/minikube \
+            "https://github.com/kubernetes/minikube/releases/download/${MINIKUBE_VERSION}/minikube-linux-amd64"
+          echo "${MINIKUBE_BINARY_SHA256}  /tmp/minikube" | sha256sum --check
+          sudo install /tmp/minikube /usr/local/bin/minikube
+          minikube version
       - uses: azure/setup-kubectl@v5
       - uses: azure/setup-helm@v5
         with:
