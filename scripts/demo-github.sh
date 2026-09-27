@@ -25,7 +25,7 @@ connection="$(curl --silent --show-error --fail --request POST \
   "$api/providers/github/users/$demo_user/connect")" || die "Could not start GitHub consent."
 auth_url="$(jq -er '.auth_url' <<<"$connection")"
 unset connection
-if ! cmd.exe /c start '' "$auth_url" >/dev/null 2>&1; then
+if ! explorer.exe "$auth_url" >/dev/null 2>&1; then
   unset auth_url
   die "Could not open the Windows browser. Run this script from WSL with Windows interop enabled."
 fi
