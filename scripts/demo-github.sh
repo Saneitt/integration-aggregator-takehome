@@ -25,11 +25,14 @@ connection="$(curl --silent --show-error --fail --request POST \
   "$api/providers/github/users/$demo_user/connect")" || die "Could not start GitHub consent."
 auth_url="$(jq -er '.auth_url' <<<"$connection")"
 unset connection
-if ! explorer.exe "$auth_url" >/dev/null 2>&1; then
-  unset auth_url
+powershell_script="Start-Process -FilePath '$auth_url'"
+encoded_powershell_script="$(printf '%s' "$powershell_script" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)"
+unset powershell_script
+if ! powershell.exe -NoProfile -NonInteractive -EncodedCommand "$encoded_powershell_script" >/dev/null 2>&1; then
+  unset auth_url encoded_powershell_script
   die "Could not open the Windows browser. Run this script from WSL with Windows interop enabled."
 fi
-unset auth_url
+unset auth_url encoded_powershell_script
 printf 'Opened the GitHub consent page in your Windows browser. Complete consent and return to this terminal.\n'
 read -r -p 'Press Enter after the callback page has loaded: ' || die "Input was closed before consent completed."
 
