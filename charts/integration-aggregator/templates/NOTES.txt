@@ -1,0 +1,12 @@
+The integration aggregator is running in namespace {{ .Release.Namespace }}.
+
+Forward the HTTP service:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "integration-aggregator.fullname" . }} 8080:{{ .Values.service.port }}
+
+Check readiness:
+  curl -fsS http://localhost:8080/readyz
+
+Open the API docs:
+  http://localhost:8080/docs
+
+The service is a single-process in-memory singleton and must run as one replica and one Uvicorn worker.

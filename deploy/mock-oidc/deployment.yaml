@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-oauth2-server
+  namespace: oidc
+  labels:
+    app.kubernetes.io/name: mock-oauth2-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mock-oauth2-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mock-oauth2-server
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mock-oauth2-server
+          image: ghcr.io/navikt/mock-oauth2-server:6.0.3
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: JSON_CONFIG_PATH
+              value: /config/config.json
+            - name: SERVER_PORT
+              value: "8080"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /ci/.well-known/openid-configuration
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /ci/.well-known/openid-configuration
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: mock-oidc-config
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-oauth2-server
+  namespace: oidc
+  labels:
+    app.kubernetes.io/name: mock-oauth2-server
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: mock-oauth2-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

@@ -1,0 +1,98 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/saneitt/integration-aggregator
+  tag: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+openbao:
+  address: http://openbao.openbao.svc.cluster.local:8200
+  mount: oauthapp
+  timeoutSeconds: 5
+  auth:
+    method: kubernetes
+    path: kubernetes
+    role: integration-aggregator
+    audience: openbao
+    tokenExpirationSeconds: 600
+    tokenSecretName: ""
+
+app:
+  callbackUrl: http://localhost:8080/callback
+  logLevel: INFO
+  worker:
+    concurrency: 16
+    queueMaxSize: 1000
+  requestTtlSeconds: 300
+  stateTtlSeconds: 600
+  maxPendingStates: 10000
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# The API is a single-process in-memory singleton. Requests are 100m/128Mi;
+# limits cap local development use without starving the JVM mock provider.
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 256Mi
+
+probes:
+  startup:
+    path: /healthz
+    periodSeconds: 2
+    failureThreshold: 30
+  liveness:
+    path: /healthz
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readiness:
+    path: /readyz
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 2
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+updateStrategy:
+  type: Recreate
+terminationGracePeriodSeconds: 30
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: /metrics
+  prometheus.io/port: "8080"
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+extraEnv: []
+
+networkPolicy:
+  enabled: false
+
+test:
+  image: curlimages/curl:8.12.1@sha256:88a9abad9d958340e48564f9bdcdaa29916a2984be59314da709f8bbc0eef6f7

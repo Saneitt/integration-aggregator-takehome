@@ -1,0 +1,27 @@
+{
+  "interactiveLogin": true,
+  "tokenCallbacks": [
+    {
+      "issuerId": "ci",
+      "tokenExpiry": 3600,
+      "requestMappings": [
+        {
+          "requestParam": "grant_type",
+          "match": "*",
+          "claims": { "aud": ["integration-aggregator"] }
+        }
+      ]
+    },
+    {
+      "issuerId": "ci-short",
+      "tokenExpiry": 30,
+      "requestMappings": [
+        {
+          "requestParam": "grant_type",
+          "match": "*",
+          "claims": { "aud": ["integration-aggregator"] }
+        }
+      ]
+    }
+  ]
+}

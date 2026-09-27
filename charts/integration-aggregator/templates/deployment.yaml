@@ -1,0 +1,136 @@
+{{- if gt (int .Values.replicaCount) 1 }}
+{{- fail "replicaCount must be at most one: service state is kept in memory" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "integration-aggregator.fullname" . }}
+  labels:
+    {{- include "integration-aggregator.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: {{ .Values.updateStrategy.type }}
+  selector:
+    matchLabels:
+      {{- include "integration-aggregator.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "integration-aggregator.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "integration-aggregator.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: aggregator
+          image: {{ include "integration-aggregator.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: OPENBAO_ADDR
+              value: {{ .Values.openbao.address | quote }}
+            - name: OPENBAO_MOUNT
+              value: {{ .Values.openbao.mount | quote }}
+            - name: OPENBAO_AUTH_METHOD
+              value: {{ .Values.openbao.auth.method | quote }}
+            - name: OPENBAO_K8S_AUTH_PATH
+              value: {{ .Values.openbao.auth.path | quote }}
+            - name: OPENBAO_K8S_ROLE
+              value: {{ .Values.openbao.auth.role | quote }}
+            - name: OPENBAO_K8S_TOKEN_FILE
+              value: /var/run/secrets/openbao/token
+            - name: OPENBAO_TIMEOUT_SECONDS
+              value: {{ .Values.openbao.timeoutSeconds | quote }}
+            - name: CALLBACK_URL
+              value: {{ .Values.app.callbackUrl | quote }}
+            - name: WORKER_CONCURRENCY
+              value: {{ .Values.app.worker.concurrency | quote }}
+            - name: QUEUE_MAX_SIZE
+              value: {{ .Values.app.worker.queueMaxSize | quote }}
+            - name: REQUEST_TTL_SECONDS
+              value: {{ .Values.app.requestTtlSeconds | quote }}
+            - name: STATE_TTL_SECONDS
+              value: {{ .Values.app.stateTtlSeconds | quote }}
+            - name: MAX_PENDING_STATES
+              value: {{ .Values.app.maxPendingStates | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.app.logLevel | quote }}
+            {{- if eq .Values.openbao.auth.method "token" }}
+            - name: OPENBAO_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "openbao.auth.tokenSecretName is required for token auth" .Values.openbao.auth.tokenSecretName }}
+                  key: token
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.probes.startup.path }}
+              port: http
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: openbao-token
+              mountPath: /var/run/secrets/openbao
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: openbao-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: {{ .Values.openbao.auth.audience | quote }}
+                  expirationSeconds: {{ .Values.openbao.auth.tokenExpirationSeconds }}
+                  path: token
+        - name: tmp
+          emptyDir: {}

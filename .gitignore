@@ -1,0 +1,39 @@
+# Secrets: never commit
+.env
+.env.*
+!.env.example
+.secrets/
+*.pem
+*.key
+*root-token*
+*unseal*
+*.tfvars
+!*.tfvars.example
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+
+# Build and test output
+.build/
+perf/results/
+*.tgz
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

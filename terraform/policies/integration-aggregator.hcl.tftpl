@@ -1,0 +1,14 @@
+# The service can register providers and rebuild its in-memory registry.
+path "${mount}/servers/*" {
+  capabilities = ["create", "update", "read", "list"]
+}
+
+# The oauthapp plugin generates the authorization URL; no OAuth logic is in the service.
+path "${mount}/auth-code-url" {
+  capabilities = ["update"]
+}
+
+# Code exchange is a write; token retrieval is a read that lets the plugin refresh as needed.
+path "${mount}/creds/*" {
+  capabilities = ["create", "update", "read"]
+}

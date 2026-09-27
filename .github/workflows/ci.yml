@@ -1,0 +1,180 @@
+name: ci
+
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Load pinned versions
+        run: grep -E '^[A-Z0-9_]+=' versions.env >> "$GITHUB_ENV"
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: make lint test
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Install kubeconform and validate Helm chart
+        run: |
+          curl -fsSLo /tmp/kubeconform.tar.gz "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          sudo install /tmp/kubeconform /usr/local/bin/kubeconform
+          make chart-lint
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - name: Install gitleaks
+        run: |
+          curl -fsSLo /tmp/gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install /tmp/gitleaks /usr/local/bin/gitleaks
+      - run: make tf-check secret-scan
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - run: make shellcheck
+
+  publish:
+    needs: lint-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_repo: ${{ steps.meta.outputs.image_repo }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      chart_ref: ${{ steps.meta.outputs.chart_ref }}
+      chart_version: ${{ steps.meta.outputs.chart_version }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Load pinned versions
+        run: grep -E '^[A-Z0-9_]+=' versions.env >> "$GITHUB_ENV"
+      - id: meta
+        name: Artifact names
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          {
+            echo "owner=${owner}"
+            echo "image_repo=ghcr.io/${owner}/integration-aggregator"
+            echo "image_tag=sha-${GITHUB_SHA::12}"
+            echo "chart_ref=oci://ghcr.io/${owner}/charts/integration-aggregator"
+            echo "chart_version=0.1.${GITHUB_RUN_NUMBER}"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: app
+          push: true
+          tags: ${{ steps.meta.outputs.image_repo }}:${{ steps.meta.outputs.image_tag }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Package and push chart
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p .build
+          helm package charts/integration-aggregator \
+            --version "${{ steps.meta.outputs.chart_version }}" \
+            --app-version "${{ steps.meta.outputs.image_tag }}" -d .build
+          echo "$GH_TOKEN" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          helm push .build/integration-aggregator-*.tgz "oci://ghcr.io/${{ steps.meta.outputs.owner }}/charts"
+
+  e2e:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    env:
+      BUILD_IMAGE: "0"
+      IMAGE_REPO: ${{ needs.publish.outputs.image_repo }}
+      IMAGE_TAG: ${{ needs.publish.outputs.image_tag }}
+      CHART_REF: ${{ needs.publish.outputs.chart_ref }}
+      CHART_VERSION: ${{ needs.publish.outputs.chart_version }}
+      IMAGE_PULL_SECRET: ghcr-pull
+      MINIKUBE_MEMORY: "6144"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Load pinned versions
+        run: grep -E '^[A-Z0-9_]+=' versions.env >> "$GITHUB_ENV"
+      - uses: medyagh/setup-minikube@v0.0.21
+        with:
+          minikube-version: ${{ env.MINIKUBE_VERSION }}
+          kubernetes-version: ${{ env.KUBERNETES_VERSION }}
+          driver: docker
+          start: "false"
+      - uses: azure/setup-kubectl@v5
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - name: Log in to GHCR for chart pull
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GH_TOKEN" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Deploy the exact published image and chart
+        run: make up
+        env:
+          GHCR_PULL_USER: ${{ github.actor }}
+          GHCR_PULL_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Reconcile a second time
+        run: make idempotency-check
+        env:
+          GHCR_PULL_USER: ${{ github.actor }}
+          GHCR_PULL_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Mock OIDC OAuth smoke flow
+        run: make smoke
+      - name: Secret leak check
+        run: make leak-check
+      - name: In-cluster k6 performance test
+        run: make perf
+      - name: Helm readiness test
+        run: helm test integration-aggregator -n aggregator --logs
+      - name: Add reports to job summary
+        if: always()
+        run: cat .build/reports/*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - name: Collect redacted diagnostics
+        if: failure()
+        run: make diagnostics
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: perf-report
+          path: perf/results/
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-reports
+          path: |
+            .build/reports/
+            .build/diagnostics/

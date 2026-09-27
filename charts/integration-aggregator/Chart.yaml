@@ -1,0 +1,12 @@
+apiVersion: v2
+name: integration-aggregator
+description: An in-memory OAuth token broker backed by OpenBao.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.30.0-0"
+home: https://github.com/Saneitt/integration-aggregator-takehome
+sources:
+  - https://github.com/Saneitt/integration-aggregator-takehome
+maintainers:
+  - name: Saneitt
