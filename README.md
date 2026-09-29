@@ -14,7 +14,7 @@ make up
 make port-forward
 ```
 
-In another WSL terminal:
+Keep the Ubuntu window open while demonstrating the project. `make port-forward` starts background connections and returns to the prompt; continue in the same terminal:
 
 ```bash
 make smoke
@@ -26,6 +26,8 @@ helm test integration-aggregator -n aggregator --logs
 
 `make up` provisions the local minikube profile, OpenBao, its checksum-verified plugin, Terraform-managed policy/auth configuration, the mock OIDC service, and this service's Helm release. A second run reconciles the same stack. `make down` deletes the cluster and generated bootstrap credentials; it keeps `.env`.
 
+A beginner-friendly [runbook](docs/RUNBOOK.md) explains each command, the expected results, safe stopping, and restarting after a reboot.
+
 ## Real provider demo
 
 The callback URL for the GitHub OAuth App must be `http://localhost:8080/callback`. Copy `.env.example` to `.env`, fill the GitHub OAuth app ID and secret locally, and set `DEMO_GITHUB_USER`. Never send those values in chat or commit `.env`.
@@ -36,7 +38,7 @@ make register-github
 make demo-github
 ```
 
-The demo opens the consent page in the Windows browser, retrieves a token after callback, and verifies the authenticated GitHub login without printing the token. Revoke the app authorization afterward. The recording and transcript belong under `docs/demo/` and must pass the leak check before commit.
+The demo opens the consent page in the Windows browser, retrieves a token after callback, and verifies the authenticated GitHub login without printing the token. Revoke the app authorization afterward. The verified [GitHub transcript](docs/demo/github-flow.md) and [terminal recording](docs/demo/github-flow.cast) are sanitized and checked for secrets.
 
 ## API
 
@@ -54,9 +56,9 @@ For exact schemas, run `make up`, `make port-forward`, then open [http://localho
 
 The `lint-test` job runs Python checks and tests, Helm validation, Terraform tests, gitleaks, and ShellCheck. `publish` builds the image with provenance/SBOM and publishes the Helm chart to GHCR. `e2e` deploys those exact artifacts to a fresh minikube cluster and runs reconciliation, mock OAuth, leak, performance, and Helm readiness checks. Reports appear in the Actions job summary and downloadable artifacts.
 
-GHCR packages created by a fork may need their visibility changed to public in the repository's **Packages** settings. The E2E job uses a temporary pull secret while the package is private.
+The published image and chart were both checked with an anonymous GHCR pull request and returned HTTP 200. The E2E job also uses a temporary pull secret to support fresh fork setups.
 
-The local k6 measurements and their limitations are documented in [perf/REPORT.md](perf/REPORT.md). Hosted-run results are added after the first green GitHub Actions E2E run.
+The local k6 measurements and their limitations are documented in [perf/REPORT.md](perf/REPORT.md). The report records the hosted CI measurements and links to their source run.
 
 ## Security and design
 

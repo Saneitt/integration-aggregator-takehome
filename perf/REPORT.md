@@ -1,6 +1,6 @@
 # Performance report
 
-The local results below are a WSL/minikube validation run. They are not CI runner measurements. Add a separate table and link the exact GitHub Actions run after the first green hosted E2E job publishes its `perf-report` artifact.
+The local and hosted results below come from separate minikube runs. The hosted values were downloaded from the successful GitHub Actions `perf-report` artifact for [run 36614839224](https://github.com/Saneitt/integration-aggregator-takehome/actions/runs/36614839224).
 
 ## Test setup
 
@@ -16,13 +16,24 @@ Local WSL 2, minikube `aggregator`, 4 CPUs / 4096 MiB, OpenBao dev mode, k6 `gra
 | c10 | 3.0 / 13.1 | 33 / 46.5 | 19.00 | 0% |
 | c50 | 3.8 / 25.6 | 34 / 71 | 92.83 | 0% |
 
-**Local source:** `make perf` on 2026-09-26 against the locally deployed build. Hosted CI results and run link: pending first green E2E workflow; the workflow uploads its generated report as `perf-report` and appends it to the job summary.
+**Local source:** `make perf` on 2026-09-26 against the locally deployed build. A second local run on 2026-09-29 also passed with zero failures.
+
+### Hosted GitHub Actions run
+
+[Successful run 36614839224](https://github.com/Saneitt/integration-aggregator-takehome/actions/runs/36614839224), `ubuntu-latest`, Minikube configured with 4 CPUs and 6144 MiB, exact image and chart published by that run. Values below are copied from its downloadable `perf-report` artifact:
+
+| Scenario | Enqueue p50/p95 (ms) | Time-to-token p50/p95 (ms) | Tokens/s | Failure rate |
+|---|---:|---:|---:|---:|
+| c1 | 2.4 / 3.0 | 30.0 / 32.0 | 1.90 | 0.00% |
+| c10 | 2.6 / 8.9 | 31.0 / 40.0 | 19.00 | 0.00% |
+| c50 | 3.1 / 22.4 | 33.0 / 58.0 | 93.53 | 0.00% |
 
 ## Caveats and next steps
 
 - OpenBao dev mode keeps data in memory and is faster and less durable than a production deployment.
 - The service uses one replica and one Python process. The GIL and single event loop limit CPU-bound work; shared in-memory state prevents horizontal scaling.
 - k6 shares the minikube node CPU with OpenBao and the service, so results describe this test environment rather than production capacity.
+- Each virtual user sleeps 0.5 seconds after an attempt. This is a paced workload (roughly at most 2 attempts/s per VU), not a saturation or maximum-capacity benchmark. Throughput is completed tokens divided by the nominal 30-second scenario duration; final in-flight iterations may finish during the grace period.
 - A 25 ms poll interval rounds observed token latency upward and adds load.
 - Tokens normally remain valid through this short test, so the numbers do not measure sustained refresh load.
 

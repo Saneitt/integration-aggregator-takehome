@@ -1,51 +1,32 @@
 # Design
 
-## Architecture
-
 ```mermaid
 flowchart LR
-  caller[Calling service] -->|provider API / 202 + poll| api[FastAPI, one process]
-  browser[User browser] -->|OAuth consent| oidc[GitHub, GitLab, or mock OIDC]
-  oidc -->|callback with code + state| api
-  api -->|Kubernetes login, audience openbao| bao[OpenBao]
-  api -->|register server, auth-code-url, exchange / read creds| plugin[oauthapp plugin]
-  plugin --> bao
-  api -->|bounded in-memory request queue| worker[Async worker]
+  caller[Calling service] --> api[FastAPI API + bounded worker queue]
+  browser[User browser] --> provider[GitHub or mock OIDC]
+  provider -->|code + state callback| api
+  api -->|Kubernetes identity| bao[OpenBao + oauthapp plugin]
+  bao -->|exchange and refresh| provider
 ```
 
-FastAPI validates requests and coordinates the flow. The OpenBao `oauthapp` plugin constructs authorization URLs, exchanges codes, stores credentials, and refreshes tokens. The service never implements OAuth token exchange or refresh itself. Terraform configures the plugin, mount, Kubernetes auth role, and policy. The handwritten Helm chart supplies the service account, projected token, probes, and restricted container settings.
+## Responsibilities and data
 
-## Data placement
+| Owner | Data and work |
+|---|---|
+| FastAPI service | Provider names/types/scopes, one-use expiring OAuth state, asynchronous request status and results, all in memory. It coordinates consent and returns `202` for token requests. |
+| OpenBao `oauthapp` plugin | Client secrets, access/refresh tokens, authorization URL generation, code exchange, and token refresh. The service does not implement its own refresh or token cache. |
+| Kubernetes / Terraform | Helm deploys the service and OpenBao. Terraform registers/enables the plugin, configures Kubernetes authentication, and applies a policy limited to required plugin paths. Terraform state is a Kubernetes Secret in the local cluster. |
 
-| Data | Location | Reason |
-|---|---|---|
-| OAuth client secrets, access/refresh tokens | OpenBao plugin storage | The secrets system owns secret persistence and token refresh. |
-| Provider metadata, one-use OAuth state, queued request status/results | Service memory | No database or disk persistence is required by this single-replica take-home. |
-| OpenBao dev root token | Ignored local `.secrets/` file and Kubernetes bootstrap Secret | Local bootstrap only; never returned to the service or logged. |
-| Terraform state | Kubernetes Secret in the `openbao` namespace | Cluster-scoped local state disappears with the dev cluster. |
+1. **Register:** `POST /providers` writes a server configuration to OpenBao. Responses return metadata but no client secret.
+2. **Connect:** the service generates random state, asks the plugin for an authorization URL, and remembers the state briefly. The user's browser visits the provider. `/callback` consumes the state once and gives the code to the plugin for exchange. A stale or reused callback fails.
+3. **Retrieve:** `GET /{provider}/{user}` queues work and returns `202` plus `Location: /requests/{id}`. A worker reads credentials from the plugin, which refreshes if needed. Polling the location returns status, then the token only on success. Bounded queues and state stores reject overload instead of losing accepted work.
 
-The service runs with a read-only root filesystem and no persistent volume. Provider client secrets are passed to OpenBao over its API and are not included in provider responses or logs. An access token is returned only by a successful `GET /requests/{id}` result.
+## Deployment and limits
 
-## Request flows
+The chart requires one replica; the image runs one Uvicorn process. OAuth state and request IDs are local to that process. With two copies, a callback or poll could reach the wrong copy and fail. Scaling requires shared provider/state/request storage, a durable queue, and idempotent processing. In-flight work and memory-only state are lost when this process restarts.
 
-1. **Register:** `POST /providers` writes `oauthapp/servers/{name}`. The provider registry keeps only the non-secret name, type, and scopes in memory.
-2. **Consent:** connect creates a random, expiring, one-use state and calls the plugin's `auth-code-url` endpoint. The callback atomically consumes state and passes the code to `oauthapp/creds/{provider}_{user}`. The plugin v3 path is `auth-code-url`; older README examples that say `config/auth-code-url` are outdated.
-3. **Retrieve:** `GET /{provider}/{user}` enqueues bounded work and returns `202` with a request location. One worker reads the current credential from OpenBao; the plugin refreshes it if needed. The caller polls until the request succeeds or fails. Results expire from memory.
+The pod uses a projected, short-lived ServiceAccount token for OpenBao Kubernetes auth; Terraform binds the role to this account and namespace with a restricted policy. The app runs with a read-only root filesystem and resource limits. Readiness tests OpenBao reachability; liveness tests the app process. The `Recreate` strategy avoids simultaneous singleton pods during upgrades.
 
-The queue is bounded. If it is full, the API answers `503` rather than claiming it accepted work it cannot retain. Each request has one queue consumer and a guarded state transition; accepted work is not fulfilled twice. Graceful shutdown stops intake and drains the queue within the configured grace period.
+Local OpenBao runs in development mode: storage is memory-only, it auto-unseals, and TLS is absent. A restart loses its data. `make up` restores declared configuration; test or real consent must be repeated. Production needs durable encrypted storage, TLS, controlled unseal, backups, and audit logs. The local API also needs caller authentication and authorization before production use; a user ID alone must never grant token access.
 
-## Replica and process limits
-
-Run one replica and one Uvicorn process. With two replicas, OAuth state created on pod A may reach pod B at callback time; polling a request ID on the other pod may return 404; and provider registries can diverge. A second Uvicorn worker creates the same split inside one pod because each worker has separate memory. To scale, move provider metadata, one-use state, and request state/queue to shared storage, use a durable queue with idempotency keys, and route callbacks independently of pod affinity. A cache alone does not provide durable, exactly-once work.
-
-## Security and operations
-
-The pod receives a projected ServiceAccount token with audience `openbao` and a short expiry. OpenBao validates it through Kubernetes TokenReview; Terraform binds the role to one ServiceAccount and namespace, gives it a 15-minute token TTL (one-hour maximum), and disables the default policy. The policy grants only provider server registration/list, authorization URL generation, and credential create/update/read operations.
-
-Readiness checks whether the app can serve requests and reach OpenBao; liveness checks only the local process so a temporary OpenBao outage does not cause restart loops. Startup and readiness probes give dependencies time to become available. `Recreate` avoids two active singleton processes during upgrades. Resource requests and limits constrain scheduling and memory use. NetworkPolicy support is optional because enforcement depends on the selected CNI.
-
-Local OpenBao uses dev mode: data is in memory, it auto-unseals, has no TLS, and its root token is deliberately available for bootstrap. Do not use these settings in production. Production would use durable Raft storage, TLS, controlled unseal or auto-unseal, audit devices, backups, and managed identities. CI publishes the image and chart, then deploys those exact artifacts to minikube and exercises OAuth, leak, idempotency, and performance paths.
-
-## Second provider and production changes
-
-The registry supports GitHub and GitLab; provider specifics remain in OpenBao's plugin configuration. Local end-to-end tests use a mock OIDC issuer and do not require real OAuth credentials. The GitHub demo uses the same API with a local callback and reads its app credentials from ignored `.env`.
+The second end-to-end provider in the automated tests is a local mock OIDC issuer, as the assignment permits. GitLab registration is supported but a real GitLab consent flow has not been demonstrated. The [real GitHub transcript](docs/demo/github-flow.md) proves human consent and token use against GitHub. The [performance report](perf/REPORT.md) describes the measured workload and limits.
