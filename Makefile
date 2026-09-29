@@ -30,7 +30,7 @@ preflight: ## Check local tools and versions
 	@bash scripts/preflight.sh
 
 up: preflight cluster namespaces bootstrap-secrets openbao configure mock-oidc image app ## Bring up the complete local stack
-	@echo "Stack is ready. Run 'make port-forward' in another terminal."
+	@echo "Stack is ready. Run 'make port-forward' next; it starts background connections."
 
 down: ## Delete the minikube profile and local generated secrets
 	@bash scripts/port-forward-stop.sh
@@ -70,7 +70,7 @@ register-github: ## Register GitHub from the local .env
 register-gitlab: ## Register GitLab from the local .env
 	@bash scripts/register-provider.sh gitlab
 
-smoke: ## Run the curl-driven local OIDC flow
+smoke: port-forward ## Run the curl-driven local OIDC flow
 	@bash scripts/smoke.sh
 
 leak-check: ## Scan logs and non-token responses for secrets

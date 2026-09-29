@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 
 REPO = Path(__file__).resolve().parents[2]
@@ -43,6 +44,7 @@ class DeployScripts(unittest.TestCase):
             tool = self.bin / name
             tool.write_text(FAKE_TOOL)
             tool.chmod(0o755)
+        shutil.copy(REPO / "Makefile", self.root / "Makefile")
         self.trace = self.root / "commands.jsonl"
         self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
                         COMMAND_TRACE=str(self.trace), IMAGE_TAG="test")
@@ -74,6 +76,48 @@ class DeployScripts(unittest.TestCase):
         self.assertEqual(commands[-1], ["kubectl", "-n", "aggregator", "rollout",
                          "status", "deployment/integration-aggregator", "--timeout=300s"])
         self.assertTrue(any(c[:3] == ["helm", "upgrade", "--install"] for c in commands))
+
+    def test_smoke_starts_forwards_before_http_requests(self):
+        result = subprocess.run(["make", "-n", "smoke"], cwd=self.root,
+                                env=self.env, capture_output=True, text=True, check=True)
+        self.assertLess(result.stdout.index("port-forward.sh"),
+                        result.stdout.index("scripts/smoke.sh"))
+
+    def test_stale_pid_file_does_not_stop_unrelated_process(self):
+        process = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(process.wait)
+        self.addCleanup(process.terminate)
+        pid_file = self.root / "stale.pid"
+        pid_file.write_text(f"{process.pid} 0\n")
+        subprocess.run(["bash", "-c", 'source "$1"; stop_process "$2"', "_",
+                        str(self.root / "scripts/lib.sh"), str(pid_file)], check=True)
+        self.assertIsNone(process.poll())
+        self.assertFalse(pid_file.exists())
+
+    def test_live_forward_is_replaced_and_stopped(self):
+        tool = self.bin / "kubectl"
+        tool.write_text("#!/usr/bin/env python3\nimport time\ntime.sleep(60)\n")
+        pid_file = self.root / "forward.pid"
+        source = str(self.root / "scripts/lib.sh")
+        command = 'source "$1"; start_port_forward aggregator svc/app 8080:8080 "$2"'
+        def start():
+            subprocess.run(["bash", "-c", command, "_", source, str(pid_file)],
+                           env=self.env, check=True)
+            return int(pid_file.read_text().split()[0])
+        def live(pid):
+            path = Path(f"/proc/{pid}/stat")
+            return path.exists() and path.read_text().split()[2] != "Z"
+        first = start()
+        try:
+            time.sleep(0.05)
+            second = start()
+            self.assertNotEqual(first, second)
+            self.assertFalse(live(first))
+            self.assertTrue(live(second))
+        finally:
+            subprocess.run(["bash", "-c", 'source "$1"; stop_process "$2"', "_",
+                            source, str(pid_file)], check=True)
+        self.assertFalse(live(second))
 
     def test_image_tag_ignores_generated_files_but_tracks_source(self):
         source = self.root / "app/main.py"
