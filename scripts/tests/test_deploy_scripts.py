@@ -34,7 +34,7 @@ class DeployScripts(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / "scripts").mkdir()
         (self.root / "app").mkdir()
-        for name in ("lib.sh", "openbao-up.sh", "app-up.sh", "image-tag.sh"):
+        for name in ("lib.sh", "openbao-up.sh", "app-up.sh", "image-tag.sh", "bootstrap-secrets.sh"):
             shutil.copy(REPO / "scripts" / name, self.root / "scripts" / name)
         shutil.copy(REPO / "versions.env", self.root / "versions.env")
         shutil.copytree(REPO / "deploy/openbao", self.root / "deploy/openbao")
@@ -76,6 +76,13 @@ class DeployScripts(unittest.TestCase):
         self.assertEqual(commands[-1], ["kubectl", "-n", "aggregator", "rollout",
                          "status", "deployment/integration-aggregator", "--timeout=300s"])
         self.assertTrue(any(c[:3] == ["helm", "upgrade", "--install"] for c in commands))
+
+    def test_bootstrap_never_echoes_registry_token(self):
+        credential = "private_registry_credential_for_test"
+        self.env.update(GITHUB_ACTIONS="true", IMAGE_PULL_SECRET="ghcr-pull",
+                        GHCR_PULL_USER="tester", GHCR_PULL_TOKEN=credential)
+        result = self.run_script("bootstrap-secrets.sh")
+        self.assertNotIn(credential, result.stdout + result.stderr)
 
     def test_smoke_starts_forwards_before_http_requests(self):
         result = subprocess.run(["make", "-n", "smoke"], cwd=self.root,

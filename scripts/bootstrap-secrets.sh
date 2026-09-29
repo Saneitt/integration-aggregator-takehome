@@ -18,7 +18,6 @@ kubectl -n openbao create secret generic openbao-bootstrap \
 
 if [[ -n "${IMAGE_PULL_SECRET:-}" ]]; then
   [[ -n "${GHCR_PULL_USER:-}" && -n "${GHCR_PULL_TOKEN:-}" ]] || die "GHCR_PULL_USER and GHCR_PULL_TOKEN are required when IMAGE_PULL_SECRET is set"
-  mask_value "$GHCR_PULL_TOKEN"
   kubectl -n aggregator create secret docker-registry "$IMAGE_PULL_SECRET" \
     --docker-server=ghcr.io \
     --docker-username="$GHCR_PULL_USER" \
