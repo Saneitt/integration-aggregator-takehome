@@ -133,6 +133,8 @@ jobs:
           sudo install /tmp/minikube /usr/local/bin/minikube
           minikube version
       - uses: azure/setup-kubectl@v5
+        with:
+          version: ${{ env.KUBERNETES_VERSION }}
       - uses: azure/setup-helm@v5
         with:
           version: ${{ env.HELM_VERSION }}

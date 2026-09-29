@@ -88,8 +88,9 @@ demo-github: ## Run the real GitHub OAuth demo
 diagnostics: ## Collect redacted diagnostics (never OpenBao logs)
 	@bash scripts/diagnostics.sh
 
-test: ## Run service unit tests
+test: ## Run service and deployment-script unit tests
 	@cd app && uv run pytest --cov=aggregator --cov-report=term-missing
+	@python3 -m unittest discover -s scripts/tests -v
 
 lint: ## Run service lint and type checks
 	@cd app && uv run ruff check . && uv run ruff format --check . && uv run mypy src

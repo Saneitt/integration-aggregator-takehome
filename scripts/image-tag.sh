@@ -8,5 +8,9 @@ find . -type f \
   ! -path '*/.pytest_cache/*' \
   ! -path '*/.mypy_cache/*' \
   ! -path '*/.ruff_cache/*' \
+  ! -path '*/__pycache__/*' \
+  ! -path './tests/*' \
+  ! -name '*.py[cod]' \
+  ! -name 'coverage.xml' \
   ! -name '.coverage' \
   -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16

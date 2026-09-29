@@ -33,3 +33,6 @@ else
     die "helm diff failed with exit code $status"
   fi
 fi
+
+# Wait for the singleton rollout even when Helm reports the release as current.
+kubectl -n "$namespace" rollout status deployment/"$release" --timeout=300s

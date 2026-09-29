@@ -38,4 +38,6 @@ case "$status" in
   *) die "helm diff failed with exit code $status" ;;
 esac
 
+# A new StatefulSet can exist before its first pod has been created.
+kubectl -n openbao wait --for=create pod/openbao-0 --timeout=180s
 kubectl -n openbao wait --for=condition=Ready pod/openbao-0 --timeout=180s
