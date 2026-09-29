@@ -181,4 +181,4 @@ jobs:
           name: e2e-reports
           path: |
             .build/reports/
-            .build/diagnostics/
+            .build/diagnostics.md

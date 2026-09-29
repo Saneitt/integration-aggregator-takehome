@@ -59,13 +59,13 @@ for source_file in "${sources[@]}"; do
     sensitive_value="$(<"$sensitive_file")"
     if grep -Fq -- "$sensitive_value" "$source_file"; then
       unset sensitive_value
-      die "Known credential material was found in a saved response, report, or app log."
+      die "Known credential material was found in $(basename -- "$source_file")."
     fi
     unset sensitive_value
   done
   if grep -Eiq 'gh[opsu]_[A-Za-z0-9]{20,}|glpat-[A-Za-z0-9_-]{20,}|Bearer[[:space:]]+[A-Za-z0-9_.~+/=-]{24,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}' \
     "$source_file"; then
-    die "Token-shaped material was found in a saved response, report, or app log."
+    die "Token-shaped material was found in $(basename -- "$source_file")."
   fi
 done
 
@@ -77,7 +77,7 @@ for source_file in "$repo_root"/.build/reports/*.md "$repo_root"/.build/*.log "$
     sensitive_value="$(<"$sensitive_file")"
     if grep -Fq -- "$sensitive_value" "$source_file"; then
       unset sensitive_value
-      die "OAuth state was found in a log or report."
+      die "OAuth state was found in $(basename -- "$source_file")."
     fi
     unset sensitive_value
   done
