@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
-from aggregator.api.deps import gateway, registry, states
+from aggregator.api.deps import activity, gateway, registry, states
+from aggregator.core.activity import ActivityLog
 from aggregator.core.oauth_states import OAuthStateStore
 from aggregator.core.registry import ProviderRegistry
 from aggregator.errors import ExchangeFailed, InvalidState, OpenBaoError, UpstreamUnavailable
@@ -28,6 +29,7 @@ async def connect(
     providers: ProviderRegistry = Depends(registry),
     oauth_states: OAuthStateStore = Depends(states),
     oauth: OAuthAppGateway = Depends(gateway),
+    log: ActivityLog = Depends(activity),
 ) -> ConnectResponse:
     provider, user = provider_name(provider), user_id(user)
     info = providers.get(provider)
@@ -42,6 +44,7 @@ async def connect(
     if not url:
         oauth_states.discard(state)
         raise UpstreamUnavailable()
+    log.add("consent_started", provider, user)
     return ConnectResponse(
         provider=provider,
         user=user,
@@ -59,13 +62,15 @@ async def callback(
     error: str | None = Query(default=None),
     oauth_states: OAuthStateStore = Depends(states),
     oauth: OAuthAppGateway = Depends(gateway),
-) -> JSONResponse:
+    log: ActivityLog = Depends(activity),
+) -> Response:
     if not state:
         raise InvalidState()
     provider, user = oauth_states.consume(state)
     if error:
         from aggregator.errors import ConsentDenied
 
+        log.add("consent_denied", provider, user)
         raise ConsentDenied()
     if not code:
         raise InvalidState()
@@ -75,6 +80,15 @@ async def callback(
         )
     except OpenBaoError as exc:
         raise ExchangeFailed() from exc
+    log.add("connected", provider, user)
+    if "text/html" in request.headers.get("accept", ""):
+        from urllib.parse import urlencode
+
+        return RedirectResponse(
+            url="/?" + urlencode({"connected": provider, "user": user}),
+            status_code=303,
+            headers={"Cache-Control": "no-store"},
+        )
     return JSONResponse(
         content={"status": "connected", "provider": provider, "user": user},
         headers={"Cache-Control": "no-store"},

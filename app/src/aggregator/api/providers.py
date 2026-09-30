@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
-from aggregator.api.deps import gateway, registry
+from aggregator.api.deps import activity, gateway, registry
 from aggregator.api.schemas import ProviderCreate, ProviderResponse
+from aggregator.core.activity import ActivityLog
 from aggregator.core.registry import ProviderRegistry
 from aggregator.errors import OpenBaoError, UpstreamUnavailable
 from aggregator.openbao.oauthapp import OAuthAppGateway
@@ -16,6 +17,7 @@ async def register_provider(
     body: ProviderCreate,
     providers: ProviderRegistry = Depends(registry),
     oauth: OAuthAppGateway = Depends(gateway),
+    log: ActivityLog = Depends(activity),
 ) -> JSONResponse:
     name = provider_name(body.name)
     scopes = body.effective_scopes()
@@ -31,6 +33,7 @@ async def register_provider(
         raise UpstreamUnavailable() from exc
     created = providers.add(name, body.provider, scopes)
     result = ProviderResponse(name=name, provider=body.provider, scopes=scopes)
+    log.add("provider_registered" if created else "provider_updated", name)
     return JSONResponse(status_code=201 if created else 200, content=result.model_dump())
 
 

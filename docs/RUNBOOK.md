@@ -6,7 +6,7 @@ These instructions are for the configured Windows laptop using Ubuntu 24.04 thro
 
 The project provides an internal API that lets other software connect a user's GitHub account and request permission to use GitHub on that user's behalf. The user approves access in GitHub. OpenBao's OAuth plugin exchanges the temporary code, stores the tokens, and handles refresh. Our Python service coordinates these steps.
 
-A browser displays the API documentation and the connection result. Commands demonstrate what another software service would do when calling the API.
+A browser dashboard lets you run a sample connection and watch each handoff. The separate API documentation still shows every endpoint and its exact request and response shape. Commands demonstrate what another software service would do when calling the API.
 
 | Part | Its job in this project |
 |---|---|
@@ -56,7 +56,7 @@ This starts background connections from laptop ports to services inside Kubernet
 
 The command returns to your prompt. A separate terminal is not required. Closing a terminal or pressing Ctrl+C at an idle prompt is not a reliable way to stop these background connections; use the stopping commands below.
 
-Open [the API documentation](http://localhost:8080/docs) in your Windows browser. `localhost` means this computer. Keep the documentation page available for the interview demonstration.
+Open [the connection walkthrough](http://localhost:8080/) in your Windows browser. `localhost` means this computer. The full [API documentation](http://localhost:8080/docs) is linked from the dashboard and remains available for technical questions.
 
 ## 4. Confirm the app is ready
 
@@ -72,6 +72,10 @@ kubectl get pods -n oidc
 A pod is Kubernetes' unit for running one or more closely related containers. Our main service runs in one app pod.
 
 ## 5. Demonstrate the repeatable mock flow
+
+In the dashboard, keep **Sample identity** selected and click **Start sample flow**. Click **Approve and continue** in the sample identity dialog. You should return to the dashboard and see all five steps marked done, a successful token status, recent events, and the actual API requests. This browser flow uses the running mock provider, OpenBao, the app, and its background worker. No real account is needed. The dashboard reads a token-free status endpoint and does not display the token.
+
+For the automated version of the same flow, run:
 
 ```bash
 make smoke
@@ -93,7 +97,7 @@ make demo-github
 
 1. The script registers the GitHub provider and opens the Windows browser.
 2. Approve the app in GitHub if prompted.
-3. Wait for the callback page to display `"status":"connected"`.
+3. Wait for the browser to return to the dashboard and show the completed connection.
 4. Return to the Ubuntu window that ran the command and press **Enter**.
 5. The script retrieves the token, masks it, and uses it to call GitHub.
 6. Success ends with **PASS GitHub API authenticated the expected user** and your username.
@@ -108,7 +112,7 @@ After the demonstration, open GitHub **Settings → Applications → Authorized 
 
 The first token request returns **202 Accepted**, a request ID, and a `Location` pointing to `/requests/{id}`. This means "your request has been queued." A background worker asks OpenBao for the credential while the caller can continue doing other work. The caller polls the request URL until it succeeds or fails.
 
-The token appears only in the successful request result. The app does not implement token refresh; OpenBao's plugin does. Temporary request results remain in memory only and expire.
+The token appears only in the successful request result. The dashboard polls `/requests/{id}/status`, which reports progress without sending the token to the browser. `/activity` shows only recent non-secret events and clears on restart. The app does not implement token refresh; OpenBao's plugin does. Temporary request results remain in memory only and expire.
 
 The deployment uses one replica and one Python process. With multiple independent copies, a callback or poll could reach a copy that does not know the state or request ID. Shared state and a durable queue would be needed before scaling this design.
 
@@ -144,7 +148,7 @@ make port-forward
 make smoke
 ```
 
-Then open `http://localhost:8080/docs`. Run `make demo-github` when you want to show real consent. Keep Ubuntu open throughout the demonstration.
+Then open `http://localhost:8080/` to run the sample browser demo. Open `/docs` from the dashboard to show the technical API reference. Run `make demo-github` when you want to show real consent. Keep Ubuntu open throughout the demonstration.
 
 ## Other useful evidence
 

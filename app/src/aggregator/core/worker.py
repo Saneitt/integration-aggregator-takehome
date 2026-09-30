@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 
+from aggregator.core.activity import ActivityLog
 from aggregator.core.oauth_states import OAuthStateStore
 from aggregator.core.requests import RequestStore
 from aggregator.metrics import (
@@ -16,9 +17,15 @@ logger = logging.getLogger(__name__)
 
 class TokenWorker:
     def __init__(
-        self, gateway: OAuthAppGateway, requests: RequestStore, concurrency: int, max_queue: int
+        self,
+        gateway: OAuthAppGateway,
+        requests: RequestStore,
+        concurrency: int,
+        max_queue: int,
+        activity: ActivityLog | None = None,
     ) -> None:
         self.gateway = gateway
+        self.activity = activity
         self.requests = requests
         self.queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=max_queue)
         self.concurrency = concurrency
@@ -57,9 +64,15 @@ class TokenWorker:
                             "The token service returned no access token.",
                         )
                         token_requests_total.labels(outcome="failed").inc()
+                        if self.activity:
+                            self.activity.add("request_failed", row.provider, row.user, request_id)
                     else:
                         self.requests.succeed(request_id, token)
                         token_requests_total.labels(outcome="succeeded").inc()
+                        if self.activity:
+                            self.activity.add(
+                                "request_succeeded", row.provider, row.user, request_id
+                            )
                 except Exception as exc:
                     from aggregator.errors import NotFound
 
@@ -75,6 +88,8 @@ class TokenWorker:
                             "The token service could not complete the request.",
                         )
                     token_requests_total.labels(outcome="failed").inc()
+                    if self.activity:
+                        self.activity.add("request_failed", row.provider, row.user, request_id)
                 finally:
                     token_request_duration_seconds.observe(time.perf_counter() - started)
             finally:

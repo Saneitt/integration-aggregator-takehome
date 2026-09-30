@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f5f0">
+  <title>Integration Aggregator · Connection walkthrough</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Integration Aggregator home">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span>Integration<br><strong>Aggregator</strong></span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a class="nav-current" href="#lab">Walkthrough</a>
+        <a href="#activity">Activity</a>
+        <a href="/docs" target="_blank" rel="noopener">API docs <span aria-hidden="true">↗</span></a>
+      </nav>
+      <div id="service-status" class="status-pill" role="status"><span class="status-dot"></span><span>Checking service</span></div>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="eyebrow"><span class="eyebrow-line"></span> LOCAL SERVICE</div>
+        <h1 id="hero-title">OAuth connection<br><em>flow.</em></h1>
+        <p>Start with the sample provider, then follow the API requests, callback, and token retrieval through the running service.</p>
+        <div class="hero-meta"><span><span class="small-dot green"></span> Local Kubernetes stack</span><span><span class="small-dot amber"></span> OpenBao handles secrets</span></div>
+      </section>
+
+      <section id="lab" class="lab-grid" aria-label="Interactive demo">
+        <div class="card demo-card">
+          <div class="card-top"><span class="section-index">DEMO</span><span class="card-tag">MOCK / GITHUB</span></div>
+          <h2>Start a connection</h2>
+          <p class="card-intro">The sample provider runs locally. GitHub uses the OAuth app registered on this machine.</p>
+          <div class="provider-picker" role="tablist" aria-label="Provider">
+            <button id="tab-mock" class="provider-tab selected" type="button" role="tab" aria-selected="true" aria-controls="mock-panel"><span class="provider-icon mock-icon" aria-hidden="true">◈</span> Sample identity <span class="tab-hint">No account needed</span></button>
+            <button id="tab-github" class="provider-tab" type="button" role="tab" aria-selected="false" aria-controls="github-panel"><span class="provider-icon github-icon" aria-hidden="true">GH</span> GitHub <span class="tab-hint">Your account</span></button>
+          </div>
+          <div id="mock-panel" class="demo-panel" role="tabpanel" aria-labelledby="tab-mock">
+            <label for="mock-user">Sample user name</label>
+            <div class="input-row"><input id="mock-user" value="demo-user" autocomplete="off" maxlength="64" spellcheck="false"><button id="start-mock" class="primary-button" type="button">Start sample flow <span aria-hidden="true">→</span></button></div>
+            <p class="field-note">The sample identity runs inside this local cluster. No GitHub login required.</p>
+          </div>
+          <div id="github-panel" class="demo-panel" role="tabpanel" aria-labelledby="tab-github" hidden>
+            <label for="github-user">Your GitHub username</label>
+            <div class="input-row"><input id="github-user" placeholder="e.g. Saneitt" autocomplete="username" maxlength="64" spellcheck="false"><button id="start-github" class="primary-button" type="button">Connect GitHub <span aria-hidden="true">→</span></button></div>
+            <p id="github-note" class="field-note">Requires your locally registered GitHub OAuth app.</p>
+          </div>
+          <div id="demo-message" class="demo-message" role="status" aria-live="polite">Start the sample flow to trace the connection.</div>
+          <div id="result-card" class="result-card" hidden>
+            <div class="result-icon" aria-hidden="true">✓</div>
+            <div><strong id="result-title">Connection complete</strong><p id="result-text"></p></div>
+          </div>
+        </div>
+
+        <div class="card journey-card" aria-labelledby="journey-title">
+          <div class="card-top"><span class="section-index">CONNECTION FLOW</span><span id="journey-label" class="card-tag neutral">WAITING</span></div>
+          <h2 id="journey-title">Connection steps</h2>
+          <p class="card-intro">Each step corresponds to an API call, a provider callback, or background work.</p>
+          <ol id="journey" class="journey-list">
+            <li data-step="1"><span class="step-marker">1</span><div><strong>Provider ready</strong><p>OpenBao holds the connection settings.</p></div><span class="step-state">Waiting</span></li>
+            <li data-step="2"><span class="step-marker">2</span><div><strong>Consent link created</strong><p>The API asks OpenBao for a sign-in URL.</p></div><span class="step-state">Waiting</span></li>
+            <li data-step="3"><span class="step-marker">3</span><div><strong>Identity connected</strong><p>The provider returns to our callback.</p></div><span class="step-state">Waiting</span></li>
+            <li data-step="4"><span class="step-marker">4</span><div><strong>Token request queued</strong><p>The API accepts work without making you wait.</p></div><span class="step-state">Waiting</span></li>
+            <li data-step="5"><span class="step-marker">5</span><div><strong>Token available</strong><p>OpenBao returns the token to the result endpoint.</p></div><span class="step-state">Waiting</span></li>
+          </ol>
+          <div class="flow-caption"><span class="animated-pulse" aria-hidden="true"></span><span id="flow-caption">Start a connection to follow the steps.</span></div>
+        </div>
+      </section>
+
+      <section class="lower-grid" aria-label="Activity and technical detail">
+        <div id="activity" class="card activity-card">
+          <div class="card-top"><span class="section-index">ACTIVITY</span><span class="live-label"><span class="live-dot"></span> LIVE EVENTS</span></div>
+          <div class="section-heading"><div><h2>Recent activity</h2><p>Events from this page and the terminal scripts, recorded by the running service.</p></div><button id="refresh-activity" class="text-button" type="button">Refresh ↻</button></div>
+          <div id="activity-list" class="activity-list" aria-live="polite"><div class="empty-state">Waiting for the first event. Try the sample flow above.</div></div>
+          <p class="activity-footnote">This history lives in memory and clears when the service restarts. Codes, secrets, and tokens are never shown here.</p>
+        </div>
+        <div class="card trace-card">
+          <div class="card-top"><span class="section-index">API TRACE</span><span class="card-tag neutral">HTTP</span></div>
+          <h2>Requests in this flow</h2>
+          <p class="card-intro">Methods, paths, and HTTP responses from this browser session.</p>
+          <div id="trace-list" class="trace-list"><div class="empty-state">No requests from this page yet.</div></div>
+          <a class="docs-link" href="/docs" target="_blank" rel="noopener"><span><strong>Open the full API reference</strong><small>All schemas, parameters, and responses stay available.</small></span><span aria-hidden="true">↗</span></a>
+        </div>
+      </section>
+
+      <section class="architecture" aria-labelledby="architecture-title">
+        <div><h2 id="architecture-title">Architecture</h2></div>
+        <div class="architecture-flow" aria-label="Browser sends requests to FastAPI, which coordinates OpenBao, which talks to the identity provider"><span>Browser<br><small>this page</small></span><b aria-hidden="true">→</b><span>FastAPI<br><small>orchestrates</small></span><b aria-hidden="true">→</b><span>OpenBao<br><small>holds secrets</small></span><b aria-hidden="true">↔</b><span>Provider<br><small>identity</small></span></div>
+      </section>
+    </main>
+    <footer><span>Integration Aggregator · Local service</span><a href="/docs" target="_blank" rel="noopener">Technical API reference ↗</a></footer>
+  </div>
+
+  <div id="consent-overlay" class="overlay" hidden>
+    <div class="consent-dialog" role="dialog" aria-modal="true" aria-labelledby="consent-title">
+      <span class="section-index">SAMPLE IDENTITY</span>
+      <div class="consent-symbol" aria-hidden="true">◈</div>
+      <h2 id="consent-title">Complete the sample consent?</h2>
+      <p>The local identity provider will return this sample user to the callback, just as a real provider would after approval.</p>
+      <div class="consent-details"><span>Provider</span><strong>Local sample identity</strong><span>User</span><strong id="consent-user">demo-user</strong></div>
+      <form id="consent-form" method="post"><input type="hidden" name="username" id="consent-username"><button class="primary-button full" type="submit">Continue to callback <span aria-hidden="true">→</span></button></form>
+      <button id="cancel-consent" class="plain-button" type="button">Cancel</button>
+    </div>
+  </div>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Saneitt/integration-aggregator-takehome/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Saneitt/integration-aggregator-takehome/actions/workflows/ci.yml)
 
-A small Python service that brokers OAuth access tokens for GitHub and GitLab. OpenBao and its `oauthapp` plugin own OAuth client secrets, code exchange, token storage, and refresh. The service orchestrates consent and returns tokens asynchronously to callers.
+A small Python service that brokers OAuth access tokens for GitHub and GitLab. OpenBao and its `oauthapp` plugin own OAuth client secrets, code exchange, token storage, and refresh. The service orchestrates consent and returns tokens asynchronously to callers. A local dashboard lets you run the mock flow, follow live events, and inspect the API calls behind it.
 
 ## Local quickstart
 
@@ -14,7 +14,7 @@ make up
 make port-forward
 ```
 
-Keep the Ubuntu window open while demonstrating the project. `make port-forward` starts background connections and returns to the prompt; continue in the same terminal:
+Open [the connection walkthrough](http://localhost:8080/) and select **Start sample flow**. Approve the local sample identity and watch the five steps, event history, and request trace complete. It uses the same running API as the commands below. Keep the Ubuntu window open while demonstrating the project. `make port-forward` starts background connections and returns to the prompt; continue in the same terminal:
 
 ```bash
 make smoke
@@ -38,19 +38,21 @@ make register-github
 make demo-github
 ```
 
-The demo opens the consent page in the Windows browser, retrieves a token after callback, and verifies the authenticated GitHub login without printing the token. Revoke the app authorization afterward. The verified [GitHub transcript](docs/demo/github-flow.md) and [terminal recording](docs/demo/github-flow.cast) are sanitized and checked for secrets.
+The demo opens the consent page in the Windows browser. The callback now lands on the dashboard, where a token-free status confirms the connection. Return to Ubuntu and press Enter; the script retrieves a token and verifies the authenticated GitHub login without printing it. GitHub may skip the approval screen if this OAuth app is already authorized. Revoke the app authorization afterward. The verified [GitHub transcript](docs/demo/github-flow.md) and [terminal recording](docs/demo/github-flow.cast) are sanitized and checked for secrets.
 
 ## API
 
+- `GET /` serves the local interactive dashboard; `/docs` remains the full Swagger API reference.
+- `GET /activity` returns the last 80 non-secret service events from memory; this history resets on restart.
 - `POST /providers` registers or updates a provider. The client secret is written to OpenBao and omitted from the response.
 - `GET /providers` lists non-secret provider metadata.
 - `POST /providers/{provider}/users/{user}/connect` starts consent and returns the plugin-generated authorization URL and one-time state.
 - `GET /callback` validates and consumes that state, then passes the authorization code to OpenBao.
 - `GET /{provider}/{user}` immediately returns `202 Accepted` and a `Location` for polling.
-- `GET /requests/{request_id}` reports queued, running, failed, or succeeded. Only this successful result endpoint contains the access token.
+- `GET /requests/{request_id}` reports queued, running, failed, or succeeded. Only this successful result endpoint contains the access token. `GET /requests/{request_id}/status` provides the same status without a token for the dashboard.
 - `GET /healthz`, `/readyz`, `/metrics`, and `/docs` provide health, readiness, Prometheus metrics, and local API docs.
 
-For exact schemas, run `make up`, `make port-forward`, then open [http://localhost:8080/docs](http://localhost:8080/docs).
+For a hands-on demonstration, open [http://localhost:8080/](http://localhost:8080/). For exact schemas, open [http://localhost:8080/docs](http://localhost:8080/docs).
 
 ## How CI proves the build
 
@@ -62,7 +64,7 @@ The local k6 measurements and their limitations are documented in [perf/REPORT.m
 
 ## Security and design
 
-The service has no database, token cache, or persistent volume. Its single-replica, single-process deployment uses a bounded in-memory queue, one-use OAuth state, Kubernetes authentication with a restricted OpenBao policy, a projected short-lived service token, a read-only root filesystem, and Pod Security `restricted`. Local OpenBao dev mode is intentionally ephemeral and unsuitable for production. See [DESIGN.md](DESIGN.md), [AI usage](docs/AI_USAGE.md), and the preserved [problem statement](docs/PROBLEM.md).
+The service has no database, token cache, or persistent volume. Dashboard activity is a bounded in-memory view of non-secret events; it is not an audit log. Its single-replica, single-process deployment uses a bounded in-memory queue, one-use OAuth state, Kubernetes authentication with a restricted OpenBao policy, a projected short-lived service token, a read-only root filesystem, and Pod Security `restricted`. Local OpenBao dev mode is intentionally ephemeral and unsuitable for production. See [DESIGN.md](DESIGN.md), [AI usage](docs/AI_USAGE.md), and the preserved [problem statement](docs/PROBLEM.md).
 
 ## Repository map
 

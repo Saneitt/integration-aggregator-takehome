@@ -46,6 +46,10 @@ def test_provider_registration_is_redacted_and_idempotent() -> None:
         assert len(listed.json()) == 1
         assert "super-secret-test-value" not in listed.text
         assert oauth.put_calls == 2
+        assert [event["kind"] for event in client.get("/activity").json()] == [
+            "provider_updated",
+            "provider_registered",
+        ]
 
 
 def test_provider_validation_and_custom_options() -> None:
@@ -186,3 +190,79 @@ def test_readiness_refreshes_expired_openbao_login() -> None:
         auth.refresh_calls = 0
         assert client.get("/readyz").status_code == 503
         assert auth.refresh_calls == 1
+
+
+def test_dashboard_and_api_docs_remain_available() -> None:
+    client, _ = build()
+    with client:
+        home = client.get("/")
+        assert home.status_code == 200
+        assert "Connection walkthrough" in home.text
+        assert "Connection steps" in home.text
+        assert client.get("/assets/style.css").status_code == 200
+        assert client.get("/assets/app.js").status_code == 200
+        assert client.get("/docs").status_code == 200
+
+
+def test_browser_callback_redirects_without_code_or_state() -> None:
+    client, oauth = build()
+    with client:
+        client.post("/providers", json=provider_payload())
+        payload = client.post("/providers/github/users/alice/connect").json()
+        response = client.get(
+            "/callback",
+            params={"code": "private-code", "state": payload["state"]},
+            headers={"Accept": "text/html"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] == "/?connected=github&user=alice"
+        assert response.headers["cache-control"] == "no-store"
+        assert "private-code" not in response.headers["location"]
+        assert payload["state"] not in response.headers["location"]
+        assert oauth.exchanged_codes == ["private-code"]
+
+
+def test_activity_is_bounded_and_never_includes_secrets() -> None:
+    client, oauth = build()
+    with client:
+        secret = "distinct-client-secret-value"
+        client.post("/providers", json={**provider_payload(), "client_secret": secret})
+        payload = client.post("/providers/github/users/alice/connect").json()
+        client.get("/callback", params={"code": "distinct-oauth-code", "state": payload["state"]})
+        oauth.credentials["github_alice"] = {"access_token": "distinct-access-token"}
+        accepted = client.get("/github/alice")
+        result = client.get(accepted.headers["location"] + "/status")
+        assert result.json()["status"] == "succeeded"
+        assert "token" not in result.json()
+        events = client.get("/activity")
+        assert events.status_code == 200
+        assert events.headers["cache-control"] == "no-store"
+        assert accepted.json()["request_id"] not in events.text
+        assert {item["kind"] for item in events.json()} >= {
+            "provider_registered",
+            "consent_started",
+            "connected",
+            "request_queued",
+            "request_succeeded",
+        }
+        for sensitive in (secret, "distinct-oauth-code", payload["state"], "distinct-access-token"):
+            assert sensitive not in events.text
+        for _ in range(100):
+            client.app.state.activity.add("consent_started", "github", "alice")
+        assert len(client.get("/activity").json()) == 80
+
+
+def test_token_free_status_does_not_change_result_contract() -> None:
+    client, oauth = build()
+    with client:
+        client.post("/providers", json=provider_payload())
+        oauth.credentials["github_alice"] = {"access_token": "result-only-token"}
+        accepted = client.get("/github/alice")
+        status = client.get(accepted.headers["location"] + "/status")
+        assert status.status_code == 200
+        assert status.headers["cache-control"] == "no-store"
+        assert status.json()["status"] == "succeeded"
+        assert "result-only-token" not in status.text
+        result = client.get(accepted.headers["location"])
+        assert result.json()["token"]["access_token"] == "result-only-token"

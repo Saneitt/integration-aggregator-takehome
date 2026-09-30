@@ -1,11 +1,15 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from aggregator.api import connect, health, providers, tokens
+from aggregator.api import activity, connect, health, providers, tokens
+from aggregator.core.activity import ActivityLog
 from aggregator.core.oauth_states import OAuthStateStore
 from aggregator.core.registry import ProviderRegistry
 from aggregator.core.requests import RequestStore
@@ -40,8 +44,9 @@ def create_app(
         registry = ProviderRegistry()
         states = OAuthStateStore(runtime.state_ttl_seconds, runtime.max_pending_states)
         requests = RequestStore(runtime.request_ttl_seconds)
+        activity_log = ActivityLog()
         token_worker = TokenWorker(
-            gateway, requests, runtime.worker_concurrency, runtime.queue_max_size
+            gateway, requests, runtime.worker_concurrency, runtime.queue_max_size, activity_log
         )
         janitor = Janitor(states, requests)
         app.state.settings = runtime
@@ -51,6 +56,7 @@ def create_app(
         app.state.registry = registry
         app.state.states = states
         app.state.requests = requests
+        app.state.activity = activity_log
         app.state.worker = token_worker
         app.state.shutting_down = False
         app.state.ready_cache = None
@@ -74,7 +80,15 @@ def create_app(
     app = FastAPI(title="Integration Aggregator", version="0.1.0", lifespan=lifespan)
     install_error_handlers(app)
     app.add_middleware(AccessLogMiddleware)
+    web_root = Path(__file__).parent / "web"
+    app.mount("/assets", StaticFiles(directory=web_root), name="assets")
+
+    @app.get("/", include_in_schema=False)
+    async def dashboard() -> FileResponse:
+        return FileResponse(web_root / "index.html", media_type="text/html")
+
     app.include_router(health.router)
+    app.include_router(activity.router)
     app.include_router(providers.router)
     app.include_router(connect.router)
     app.include_router(tokens.router)

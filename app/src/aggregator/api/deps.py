@@ -2,6 +2,7 @@ from typing import cast
 
 from fastapi import Request
 
+from aggregator.core.activity import ActivityLog
 from aggregator.core.oauth_states import OAuthStateStore
 from aggregator.core.registry import ProviderRegistry
 from aggregator.core.requests import RequestStore
@@ -27,3 +28,7 @@ def worker(request: Request) -> TokenWorker:
 
 def gateway(request: Request) -> OAuthAppGateway:
     return cast(OAuthAppGateway, request.app.state.gateway)
+
+
+def activity(request: Request) -> ActivityLog:
+    return cast(ActivityLog, request.app.state.activity)
